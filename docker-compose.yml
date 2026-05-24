@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_PATH=/app/data/scout.db
+    env_file:
+      - ./backend/.env
+    volumes:
+      - scout-data:/app/backend/data
+    restart: unless-stopped
+
+volumes:
+  scout-data:
