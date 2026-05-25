@@ -3,6 +3,17 @@ const db = require('../db');
 
 const router = express.Router();
 
+// Hämta när senaste importen gjordes
+router.get('/import-status', (req, res) => {
+  try {
+    // Vi lagrar detta i en liten intern inställningstabell eller kollar max skapad medlem
+    const row = db.prepare(`SELECT MAX(created_at) as last_import FROM members`).get();
+    res.json({ last_import: row?.last_import || null });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.get('/age-configs', (req, res) => {
   try {
     const rows = db.prepare(`SELECT group_name, is_active FROM age_group_configs ORDER BY group_name`).all();
@@ -26,20 +37,18 @@ router.post('/age-configs', (req, res) => {
   }
 });
 
-// Uppdaterad slutpunkt som filtrerar bort oaktiva åldersgrupper mer träffsäkert
+// Hämta endast de grupper som INTE matchar bortbockade inställningar
 router.get('/groups', (req, res) => {
   try {
-    // Hämta alla unika avdelningsnamn
-    const allGroups = db.prepare(`SELECT DISTINCT group_name FROM members ORDER BY group_name`).all();
-    // Hämta de åldersgrupper som administratören har valt att inaktivera
+    const allGroups = db.prepare(`SELECT DISTINCT group_name FROM members WHERE group_name IS NOT NULL AND group_name != '' ORDER BY group_name`).all();
     const inactiveConfigs = db.prepare(`SELECT group_name FROM age_group_configs WHERE is_active = 0`).all().map(c => c.group_name.toLowerCase());
 
-    // Filtrera bort avdelningar som innehåller namnet på en inaktiverad programgrupp
     const activeGroups = allGroups
       .map(r => r.group_name)
       .filter(name => {
-        const lowerName = name.toLowerCase();
-        return !inactiveConfigs.some(inactive => lowerName.includes(inactive));
+        const lowerName = name.toLowerCase().trim();
+        // Om avdelningsnamnet innehåller eller matchar något av de bortbockade orden, ta bort det
+        return !inactiveConfigs.some(inactive => lowerName.includes(inactive.trim()));
       });
 
     res.json(activeGroups);
