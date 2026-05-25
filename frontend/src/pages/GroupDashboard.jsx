@@ -2,18 +2,24 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import ScoutLogo from '../components/ScoutLogo';
 
-// SMS-mall på svenska
 function smsTemplate(firstName) {
   return `Hej! Vi har märkt att ${firstName} inte har varit med på de senaste mötena. Vi saknar er och hoppas att allt är bra. Hör gärna av er om ni har frågor eller om ${firstName} vill sluta. Hälsningar, Scouterna i Mellerud`;
 }
 
-// Formatera telefonnummer för visning
 function displayPhone(phone) {
   if (!phone) return null;
   return phone.replace(/^(\+46)(\d{2})(\d{3})(\d{2})(\d{2})$/, '$1 $2 $3 $4 $5');
 }
 
-// SMS-modal med två alternativ: 46elks API eller enhetens SMS-app
+// Funktion för att öppna en extern medlemslänk med en bekräftelse-popup
+function openScoutnetProfile(scoutnetId) {
+  if (!scoutnetId) return;
+  const confirmOpen = window.confirm("Öppna Scoutnet?");
+  if (confirmOpen) {
+    window.open(`https://www.scoutnet.se/organisation/user/${scoutnetId}`, '_blank');
+  }
+}
+
 function SmsModal({ member, onClose, onSent }) {
   const [activeGuardian, setActiveGuardian] = useState(
     member.parent_phone ? 1 : member.parent_phone_2 ? 2 : 1
@@ -32,7 +38,6 @@ function SmsModal({ member, onClose, onSent }) {
   const activePhone = useCustom ? customPhone : (activeGuardian === 1 ? phone1 : phone2);
   const hasPhone = !!activePhone;
 
-  // SMS via 46elks API
   async function sendViaApi() {
     if (!hasPhone) return setError('Inget telefonnummer valt');
     setSending(true);
@@ -53,7 +58,6 @@ function SmsModal({ member, onClose, onSent }) {
     }
   }
 
-  // SMS via enhetens SMS-app (deeplink)
   function sendViaPhone() {
     if (!hasPhone) return setError('Inget telefonnummer valt');
     const encoded = encodeURIComponent(message);
@@ -65,7 +69,6 @@ function SmsModal({ member, onClose, onSent }) {
   return (
     <div className="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
       <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full sm:max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
-        {/* Header */}
         <div className="px-5 pt-5 pb-3 border-b border-gray-100">
           <div className="flex items-center justify-between">
             <h2 className="text-base font-bold text-gray-900">
@@ -79,7 +82,6 @@ function SmsModal({ member, onClose, onSent }) {
         </div>
 
         <div className="px-5 py-4 space-y-4">
-          {/* Välj anhörig */}
           <div>
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Skicka till</p>
             <div className="space-y-2">
@@ -114,7 +116,6 @@ function SmsModal({ member, onClose, onSent }) {
                   Inga telefonnummer sparade. Fyll i nedan eller importera från ScoutNet.
                 </p>
               )}
-              {/* Annat nummer */}
               <div>
                 <button
                   onClick={() => setUseCustom(v => !v)}
@@ -136,7 +137,6 @@ function SmsModal({ member, onClose, onSent }) {
             </div>
           </div>
 
-          {/* Meddelandetext */}
           <div>
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Meddelande</p>
             <textarea
@@ -151,7 +151,6 @@ function SmsModal({ member, onClose, onSent }) {
             <p className="text-red-600 text-sm bg-red-50 border border-red-200 rounded-xl px-3 py-2">{error}</p>
           )}
 
-          {/* Knappar */}
           <div className="space-y-2 pb-2">
             <button
               onClick={sendViaPhone}
@@ -167,10 +166,7 @@ function SmsModal({ member, onClose, onSent }) {
             >
               <span>⚡</span> {sending ? 'Skickar...' : 'Skicka via 46elks API'}
             </button>
-            <button
-              onClick={onClose}
-              className="w-full text-gray-400 hover:text-gray-600 text-sm py-2"
-            >
+            <button onClick={onClose} className="w-full text-gray-400 hover:text-gray-600 text-sm py-2">
               Avbryt
             </button>
           </div>
@@ -180,7 +176,6 @@ function SmsModal({ member, onClose, onSent }) {
   );
 }
 
-// Modal för nytt meddelande
 function AnnouncementModal({ groupName, onClose, onPosted }) {
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
@@ -256,7 +251,6 @@ export default function GroupDashboard() {
   const [showAnnouncement, setShowAnnouncement] = useState(false);
   const [toast, setToast] = useState('');
 
-  // --- NYA STATE-VARIABLER FÖR MANUELL NÄRVARO ---
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [attendanceSheet, setAttendanceSheet] = useState({});
   const [savingAttendance, setSavingAttendance] = useState(false);
@@ -281,18 +275,16 @@ export default function GroupDashboard() {
     }
   }
 
-  // Hämta sparat närvarodata när datum ändras
   async function fetchAttendanceForDate() {
     if (!groupName || !selectedDate) return;
     try {
       const res = await fetch(`/api/members/attendance-date?group=${encodeURIComponent(groupName)}&date=${selectedDate}`);
       if (res.ok) {
         const data = await res.json();
-        // data förväntas vara ett objekt: { member_id: true/false }
         setAttendanceSheet(data);
       }
     } catch (e) {
-      console.error("Fel vid hämtning av närvaro för datum:", e);
+      console.error(e);
     }
   }
 
@@ -312,7 +304,6 @@ export default function GroupDashboard() {
     showToast(method === 'api' ? '✓ SMS skickat via 46elks' : '📱 SMS-app öppnad');
   }
 
-  // Ändra checkbox-status lokalt
   function handleCheckboxChange(memberId) {
     setAttendanceSheet(prev => ({
       ...prev,
@@ -320,7 +311,6 @@ export default function GroupDashboard() {
     }));
   }
 
-  // Spara närvaro till backend databasen
   async function saveAttendance() {
     setSavingAttendance(true);
     try {
@@ -335,7 +325,7 @@ export default function GroupDashboard() {
       });
       if (!res.ok) throw new Error('Kunde inte spara närvaro');
       showToast('✓ Närvarolistan har sparats!');
-      load(); // Ladda om statistiken på skärmen
+      load();
     } catch (e) {
       showToast('❌ Fel: ' + e.message);
     } finally {
@@ -343,33 +333,61 @@ export default function GroupDashboard() {
     }
   }
 
+  // Logik för att rendera den smarta kontaktkolumnen
+  function renderContactCell(m) {
+    // 1. Kolla om scouten har ett eget mobilnummer registrerat
+    if (m.scout_phone) {
+      return (
+        <div>
+          <p className="text-xs font-semibold text-gray-500">Egen mobil</p>
+          <a href={`tel:${m.scout_phone}`} className="text-xs text-scout-600 font-mono hover:underline">
+            {displayPhone(m.scout_phone)}
+          </a>
+        </div>
+      );
+    }
+    // 2. Om eget saknas, backa upp på Anhörig 1
+    if (m.parent_phone) {
+      return (
+        <div>
+          <p className="text-xs text-gray-600 truncate max-w-[120px]">{m.parent_name_1 || 'Anhörig 1'}</p>
+          <a href={`tel:${m.parent_phone}`} className="text-xs text-scout-600 font-mono hover:underline">
+            {displayPhone(m.parent_phone)}
+          </a>
+        </div>
+      );
+    }
+    // 3. Om Anhörig 1 saknas, kolla Anhörig 2
+    if (m.parent_phone_2) {
+      return (
+        <div>
+          <p className="text-xs text-gray-600 truncate max-w-[120px]">{m.parent_name_2 || 'Anhörig 2'}</p>
+          <a href={`tel:${m.parent_phone_2}`} className="text-xs text-scout-600 font-mono hover:underline">
+            {displayPhone(m.parent_phone_2)}
+          </a>
+        </div>
+      );
+    }
+    // 4. Det finns inga nummer alls i systemet
+    return (
+      <span className="text-xs font-medium text-red-500 bg-red-50 border border-red-100 rounded px-1.5 py-0.5 animate-pulse">
+        ⚠️ Saknas i ScoutNet
+      </span>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {smsTarget && (
-        <SmsModal
-          member={smsTarget}
-          onClose={() => setSmsTarget(null)}
-          onSent={handleSmsSent}
-        />
+        <SmsModal member={smsTarget} onClose={() => setSmsTarget(null)} onSent={handleSmsSent} />
       )}
       {showAnnouncement && (
-        <AnnouncementModal
-          groupName={groupName}
-          onClose={() => setShowAnnouncement(false)}
-          onPosted={() => { setShowAnnouncement(false); load(); }}
-        />
+        <AnnouncementModal groupName={groupName} onClose={() => setShowAnnouncement(false)} onPosted={() => { setShowAnnouncement(false); load(); }} />
       )}
 
-      {/* Header */}
       <header className="bg-scout-700 text-white">
         <div className="max-w-3xl mx-auto px-4 py-4 flex items-center gap-3">
-          <button
-            onClick={() => navigate('/')}
-            className="text-scout-200 hover:text-white p-1"
-            aria-label="Tillbaka"
-          >
-            ←
-          </button>
+          <button onClick={() => navigate('/')} className="text-scout-200 hover:text-white p-1">←</button>
           <ScoutLogo size={28} white />
           <div>
             <h1 className="text-base font-bold leading-tight">{groupName}</h1>
@@ -378,7 +396,6 @@ export default function GroupDashboard() {
         </div>
       </header>
 
-      {/* Toast */}
       {toast && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-gray-900 text-white text-sm rounded-2xl px-5 py-3 shadow-xl">
           {toast}
@@ -386,35 +403,22 @@ export default function GroupDashboard() {
       )}
 
       <div className="max-w-3xl mx-auto px-4 py-5 space-y-6">
-
-        {/* Flaggade — behöver uppmärksamhet */}
         {flagged.length > 0 && (
           <section>
-            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
-              Saknas från möten
-            </h2>
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Saknas från möten</h2>
             <div className="space-y-2">
               {flagged.map(m => (
-                <div
-                  key={m.id}
-                  className="bg-white border border-red-200 rounded-2xl p-4 flex items-center justify-between gap-3 shadow-sm"
-                >
+                <div key={m.id} className="bg-white border border-red-200 rounded-2xl p-4 flex items-center justify-between gap-3 shadow-sm">
                   <div className="min-w-0">
-                    <p className="font-semibold text-gray-900">{m.first_name} {m.last_name}</p>
-                    <p className="text-xs text-red-600 mt-0.5">
-                      Borta {m.consecutive_missed} möten i rad
+                    <p 
+                      onClick={() => openScoutnetProfile(m.scoutnet_member_id)}
+                      className="font-semibold text-gray-900 cursor-pointer hover:text-scout-700 hover:underline"
+                    >
+                      {m.first_name} {m.last_name} 🔗
                     </p>
-                    {(m.parent_name_1 || m.parent_phone) && (
-                      <p className="text-xs text-gray-400 mt-1 truncate">
-                        {m.parent_name_1 && <span>{m.parent_name_1} · </span>}
-                        {m.parent_phone && <span className="font-mono">{displayPhone(m.parent_phone)}</span>}
-                      </p>
-                    )}
+                    <p className="text-xs text-red-600 mt-0.5">Borta {m.consecutive_missed} möten i rad</p>
                   </div>
-                  <button
-                    onClick={() => setSmsTarget(m)}
-                    className="bg-scout-700 text-white text-xs rounded-xl px-3.5 py-2 hover:bg-scout-800 active:scale-95 transition-all shrink-0 font-medium"
-                  >
+                  <button onClick={() => setSmsTarget(m)} className="bg-scout-700 text-white text-xs rounded-xl px-3.5 py-2 hover:bg-scout-800 font-medium">
                     Var är {m.first_name}?
                   </button>
                 </div>
@@ -423,26 +427,12 @@ export default function GroupDashboard() {
           </section>
         )}
 
-        {/* Alla medlemmar & Närvarohantering */}
         <section>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
-            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">
-              Alla medlemmar ({members.length})
-            </h2>
-            
-            {/* NYTT: DATUMVÄLJARE OCH SPARA-KNAPP */}
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Alla medlemmar ({members.length})</h2>
             <div className="flex items-center gap-2 bg-white p-1.5 rounded-xl border border-gray-200 shadow-sm">
-              <input 
-                type="date" 
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="text-xs font-medium focus:outline-none text-gray-700 px-2 py-1"
-              />
-              <button
-                onClick={saveAttendance}
-                disabled={savingAttendance || members.length === 0}
-                className="bg-green-600 text-white text-xs rounded-lg px-3 py-1.5 hover:bg-green-700 font-semibold disabled:opacity-50 transition-colors"
-              >
+              <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="text-xs font-medium focus:outline-none text-gray-700 px-2 py-1" />
+              <button onClick={saveAttendance} disabled={savingAttendance || members.length === 0} className="bg-green-600 text-white text-xs rounded-lg px-3 py-1.5 hover:bg-green-700 font-semibold disabled:opacity-50 transition-colors">
                 {savingAttendance ? 'Sparar...' : 'Spara närvaro'}
               </button>
             </div>
@@ -455,62 +445,37 @@ export default function GroupDashboard() {
           ) : members.length === 0 ? (
             <div className="bg-white rounded-2xl border p-5 text-center">
               <p className="text-gray-500 text-sm">Inga medlemmar i denna avdelning.</p>
-              <p className="text-gray-400 text-xs mt-1">Importera Excel-fil i adminpanelen.</p>
             </div>
           ) : (
             <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b border-gray-100">
                   <tr>
-                    {/* NYTT: KOLUMN FÖR CHECKBOX */}
                     <th className="text-center px-4 py-3 font-medium text-gray-500 text-xs uppercase tracking-wide w-16">Här</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs uppercase tracking-wide">Namn</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs uppercase tracking-wide hidden sm:table-cell">Kontakt</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs uppercase tracking-wide">Kontakt</th>
                     <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs uppercase tracking-wide">Närvaro</th>
-                    <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs uppercase tracking-wide hidden sm:table-cell">Senast</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {members.map(m => (
                     <tr key={m.id} className="hover:bg-gray-50 transition-colors">
-                      {/* NYTT: CHECKBOX CELL */}
                       <td className="px-4 py-3 text-center">
-                        <input
-                          type="checkbox"
-                          checked={!!attendanceSheet[m.id]}
-                          onChange={() => handleCheckboxChange(m.id)}
-                          className="w-5 h-5 rounded border-gray-300 text-scout-700 focus:ring-scout-500 cursor-pointer"
-                        />
+                        <input type="checkbox" checked={!!attendanceSheet[m.id]} onChange={() => handleCheckboxChange(m.id)} className="w-5 h-5 rounded border-gray-300 text-scout-700 focus:ring-scout-500 cursor-pointer" />
                       </td>
                       <td className="px-4 py-3">
-                        <p className="font-medium text-gray-900">{m.first_name} {m.last_name}</p>
-                        {/* Visa kontakt på mobil */}
-                        {(m.parent_name_1 || m.parent_phone) && (
-                          <p className="text-xs text-gray-400 mt-0.5 sm:hidden truncate">
-                            {m.parent_name_1 || displayPhone(m.parent_phone)}
-                          </p>
-                        )}
+                        <p 
+                          onClick={() => openScoutnetProfile(m.scoutnet_member_id)}
+                          className="font-bold text-gray-900 cursor-pointer hover:text-scout-700 hover:underline inline-flex items-center gap-1"
+                        >
+                          {m.first_name} {m.last_name} <span className="text-gray-300 text-xs">🔗</span>
+                        </p>
                       </td>
-                      <td className="px-4 py-3 hidden sm:table-cell">
-                        {m.parent_phone ? (
-                          <div>
-                            {m.parent_name_1 && <p className="text-xs text-gray-600">{m.parent_name_1}</p>}
-                            <a
-                              href={`tel:${m.parent_phone}`}
-                              className="text-xs text-scout-600 font-mono hover:underline"
-                            >
-                              {displayPhone(m.parent_phone)}
-                            </a>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-gray-300">—</span>
-                        )}
+                      <td className="px-4 py-3">
+                        {renderContactCell(m)}
                       </td>
                       <td className="px-4 py-3 text-right text-gray-600 tabular-nums text-xs">
                         {m.attended ?? 0}/{m.total_meetings ?? 0}
-                      </td>
-                      <td className="px-4 py-3 text-right text-gray-400 text-xs hidden sm:table-cell">
-                        {m.last_seen ?? '—'}
                       </td>
                     </tr>
                   ))}
@@ -520,30 +485,20 @@ export default function GroupDashboard() {
           )}
         </section>
 
-        {/* Meddelanden */}
         <section>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">
-              Meddelanden
-            </h2>
-            <button
-              onClick={() => setShowAnnouncement(true)}
-              className="bg-scout-700 text-white text-xs rounded-xl px-3.5 py-2 hover:bg-scout-800 font-medium"
-            >
-              + Nytt
-            </button>
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Meddelanden</h2>
+            <button onClick={() => setShowAnnouncement(true)} className="bg-scout-700 text-white text-xs rounded-xl px-3.5 py-2 hover:bg-scout-800 font-medium">+ Nytt</button>
           </div>
           {announcements.length === 0 ? (
-            <p className="text-gray-400 text-sm">Inga medmeldanden ännu.</p>
+            <p className="text-gray-400 text-sm">Inga meddelanden ännu.</p>
           ) : (
             <div className="space-y-2">
               {announcements.map(a => (
                 <div key={a.id} className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm">
                   <p className="font-semibold text-gray-900 text-sm">{a.title}</p>
                   <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap leading-relaxed">{a.body}</p>
-                  <p className="text-xs text-gray-300 mt-2">
-                    {new Date(a.created_at).toLocaleDateString('sv-SE')}
-                  </p>
+                  <p className="text-xs text-gray-300 mt-2">{new Date(a.created_at).toLocaleDateString('sv-SE')}</p>
                 </div>
               ))}
             </div>
