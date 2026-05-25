@@ -11,6 +11,64 @@ router.get('/groups', (req, res) => {
   res.json(rows.map(r => r.group_name));
 });
 
+// GET /api/members/attendance-date — Hämta närvaro för specifikt datum och grupp
+router.get('/attendance-date', (req, res) => {
+  const { group, date } = req.query;
+  if (!group || !date) return res.status(400).json({ error: 'Saknar grupp eller datum' });
+
+  try {
+    const rows = db.prepare(`
+      SELECT a.member_id, a.present 
+      FROM attendance a
+      JOIN members m ON a.member_id = m.id
+      WHERE LOWER(m.group_name) = LOWER(?) AND a.meeting_date = ?
+    `).all(group, date);
+
+    // Gör om array till en mappning: { memberId: true/false }
+    const sheet = {};
+    rows.forEach(r => {
+      sheet[r.member_id] = r.present === 1;
+    });
+    res.json(sheet);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/members/attendance-date — Spara/Uppdatera närvaro för ett datum
+router.post('/attendance-date', (req, res) => {
+  const { group_name, date, attendance } = req.body; // attendance: { "id": true/false }
+  if (!group_name || !date || !attendance) {
+    return res.status(400).json({ error: 'Saknar obligatorisk data' });
+  }
+
+  try {
+    db.transaction(() => {
+      // 1. Ta bort gammal närvaro för den här gruppen på just detta datumet
+      db.prepare(`
+        DELETE FROM attendance 
+        WHERE meeting_date = ? AND member_id IN (
+          SELECT id FROM members WHERE LOWER(group_name) = LOWER(?)
+        )
+      `).run(date, group_name);
+
+      // 2. Skjut in den nya datan rad för rad
+      const insertStmt = db.prepare(`
+        INSERT INTO attendance (member_id, meeting_date, present)
+        VALUES (?, ?, ?)
+      `);
+
+      for (const [memberId, isPresent] of Object.entries(attendance)) {
+        insertStmt.run(Number(memberId), date, isPresent ? 1 : 0);
+      }
+    });
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // GET /api/members?group=Utmanarna
 router.get('/', (req, res) => {
   const group = req.query.group;
