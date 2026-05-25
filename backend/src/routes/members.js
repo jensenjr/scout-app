@@ -3,10 +3,8 @@ const db = require('../db');
 
 const router = express.Router();
 
-// Hämta när senaste importen gjordes
 router.get('/import-status', (req, res) => {
   try {
-    // Vi lagrar detta i en liten intern inställningstabell eller kollar max skapad medlem
     const row = db.prepare(`SELECT MAX(created_at) as last_import FROM members`).get();
     res.json({ last_import: row?.last_import || null });
   } catch (error) {
@@ -37,18 +35,18 @@ router.post('/age-configs', (req, res) => {
   }
 });
 
-// Hämta endast de grupper som INTE matchar bortbockade inställningar
+// Smart inklusionsfiltrering: Visar ENDAST avdelningar som matchar en IKRYSSAD åldersgrupp
 router.get('/groups', (req, res) => {
   try {
     const allGroups = db.prepare(`SELECT DISTINCT group_name FROM members WHERE group_name IS NOT NULL AND group_name != '' ORDER BY group_name`).all();
-    const inactiveConfigs = db.prepare(`SELECT group_name FROM age_group_configs WHERE is_active = 0`).all().map(c => c.group_name.toLowerCase());
+    const activeConfigs = db.prepare(`SELECT group_name FROM age_group_configs WHERE is_active = 1`).all().map(c => c.group_name.toLowerCase());
 
     const activeGroups = allGroups
       .map(r => r.group_name)
       .filter(name => {
         const lowerName = name.toLowerCase().trim();
-        // Om avdelningsnamnet innehåller eller matchar något av de bortbockade orden, ta bort det
-        return !inactiveConfigs.some(inactive => lowerName.includes(inactive.trim()));
+        // Avdelningen tillåts bara om dess namn innehåller någon av de aktiva/ikryssade grupperna
+        return activeConfigs.some(active => lowerName.includes(active.trim()));
       });
 
     res.json(activeGroups);
