@@ -11,7 +11,6 @@ function displayPhone(phone) {
   return phone.replace(/^(\+46)(\d{2})(\d{3})(\d{2})(\d{2})$/, '$1 $2 $3 $4 $5');
 }
 
-// Funktion för att öppna en extern medlemslänk med en bekräftelse-popup
 function openScoutnetProfile(scoutnetId) {
   if (!scoutnetId) return;
   const confirmOpen = window.confirm("Öppna Scoutnet?");
@@ -270,7 +269,8 @@ export default function GroupDashboard() {
       setFlagged(flaggedData);
       setMembers(membersData);
       setAnnouncements(announcementsData);
-    } finally {
+    } Object.entries(attendanceSheet)
+    finally {
       setLoading(false);
     }
   }
@@ -311,6 +311,18 @@ export default function GroupDashboard() {
     }));
   }
 
+  // Funktion för att bocka i ALLA eller ur ALLA medlemmar på en gång
+  function toggleSelectAll(checked) {
+    const nextSheet = {};
+    members.forEach(m => {
+      nextSheet[m.id] = checked;
+    });
+    setAttendanceSheet(nextSheet);
+  }
+
+  // Kollar om ALLA är ikryssade i nuläget
+  const isAllSelected = members.length > 0 && members.every(m => !!attendanceSheet[m.id]);
+
   async function saveAttendance() {
     setSavingAttendance(true);
     try {
@@ -333,7 +345,6 @@ export default function GroupDashboard() {
     }
   }
 
-  // Logik för att rendera den smarta kontaktkolumnen
   function renderContactCell(m) {
     // 1. Kolla om scouten har ett eget mobilnummer registrerat
     if (m.scout_phone) {
@@ -347,31 +358,39 @@ export default function GroupDashboard() {
       );
     }
     // 2. Om eget saknas, backa upp på Anhörig 1
-    if (m.parent_phone) {
+    if (m.parent_name_1 || m.parent_phone) {
       return (
         <div>
-          <p className="text-xs text-gray-600 truncate max-w-[120px]">{m.parent_name_1 || 'Anhörig 1'}</p>
-          <a href={`tel:${m.parent_phone}`} className="text-xs text-scout-600 font-mono hover:underline">
-            {displayPhone(m.parent_phone)}
-          </a>
+          <p className="text-xs text-gray-600 truncate max-w-[120px] font-medium">{m.parent_name_1 || 'Anhörig 1'}</p>
+          {m.parent_phone ? (
+            <a href={`tel:${m.parent_phone}`} className="text-xs text-scout-600 font-mono hover:underline">
+              {displayPhone(m.parent_phone)}
+            </a>
+          ) : (
+            <span className="text-[10px] text-red-500 font-semibold bg-red-50 border border-red-100 px-1 rounded block w-max">Nummer saknas</span>
+          )}
         </div>
       );
     }
     // 3. Om Anhörig 1 saknas, kolla Anhörig 2
-    if (m.parent_phone_2) {
+    if (m.parent_name_2 || m.parent_phone_2) {
       return (
         <div>
-          <p className="text-xs text-gray-600 truncate max-w-[120px]">{m.parent_name_2 || 'Anhörig 2'}</p>
-          <a href={`tel:${m.parent_phone_2}`} className="text-xs text-scout-600 font-mono hover:underline">
-            {displayPhone(m.parent_phone_2)}
-          </a>
+          <p className="text-xs text-gray-600 truncate max-w-[120px] font-medium">{m.parent_name_2 || 'Anhörig 2'}</p>
+          {m.parent_phone_2 ? (
+            <a href={`tel:${m.parent_phone_2}`} className="text-xs text-scout-600 font-mono hover:underline">
+              {displayPhone(m.parent_phone_2)}
+            </a>
+          ) : (
+            <span className="text-[10px] text-red-500 font-semibold bg-red-50 border border-red-100 px-1 rounded block w-max">Nummer saknas</span>
+          )}
         </div>
       );
     }
-    // 4. Det finns inga nummer alls i systemet
+    // 4. Det finns inga uppgifter alls i systemet
     return (
-      <span className="text-xs font-medium text-red-500 bg-red-50 border border-red-100 rounded px-1.5 py-0.5 animate-pulse">
-        ⚠️ Saknas i ScoutNet
+      <span className="text-xs font-medium text-red-500 bg-red-50 border border-red-100 rounded px-1.5 py-0.5">
+        ⚠️ Saknas helt i ScoutNet
       </span>
     );
   }
@@ -451,7 +470,15 @@ export default function GroupDashboard() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b border-gray-100">
                   <tr>
-                    <th className="text-center px-4 py-3 font-medium text-gray-500 text-xs uppercase tracking-wide w-16">Här</th>
+                    <th className="text-center px-4 py-3 font-medium text-gray-500 text-xs uppercase tracking-wide w-16">
+                      <input 
+                        type="checkbox" 
+                        checked={isAllSelected}
+                        onChange={(e) => toggleSelectAll(e.target.checked)}
+                        className="w-5 h-5 rounded border-gray-300 text-scout-700 focus:ring-scout-500 cursor-pointer"
+                        title="Markera / avmarkera alla medlemmar"
+                      />
+                    </th>
                     <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs uppercase tracking-wide">Namn</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs uppercase tracking-wide">Kontakt</th>
                     <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs uppercase tracking-wide">Närvaro</th>
