@@ -58,7 +58,6 @@ function SmsModal({ member, onClose, onSent }) {
     if (!hasPhone) return setError('Inget telefonnummer valt');
     const encoded = encodeURIComponent(message);
     const to = activePhone.replace(/\s/g, '');
-    // sms:-länk fungerar på iOS och Android
     window.location.href = `sms:${to}?body=${encoded}`;
     onSent('phone');
   }
@@ -257,6 +256,11 @@ export default function GroupDashboard() {
   const [showAnnouncement, setShowAnnouncement] = useState(false);
   const [toast, setToast] = useState('');
 
+  // --- NYA STATE-VARIABLER FÖR MANUELL NÄRVARO ---
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [attendanceSheet, setAttendanceSheet] = useState({});
+  const [savingAttendance, setSavingAttendance] = useState(false);
+
   async function load() {
     setLoading(true);
     try {
@@ -265,15 +269,38 @@ export default function GroupDashboard() {
         fetch(`/api/members?group=${encodeURIComponent(groupName)}`),
         fetch(`/api/announcements?group=${encodeURIComponent(groupName)}`),
       ]);
-      setFlagged(await fRes.json());
-      setMembers(await mRes.json());
-      setAnnouncements(await aRes.json());
+      const flaggedData = await fRes.json();
+      const membersData = await mRes.json();
+      const announcementsData = await aRes.json();
+
+      setFlagged(flaggedData);
+      setMembers(membersData);
+      setAnnouncements(announcementsData);
     } finally {
       setLoading(false);
     }
   }
 
+  // Hämta sparat närvarodata när datum ändras
+  async function fetchAttendanceForDate() {
+    if (!groupName || !selectedDate) return;
+    try {
+      const res = await fetch(`/api/members/attendance-date?group=${encodeURIComponent(groupName)}&date=${selectedDate}`);
+      if (res.ok) {
+        const data = await res.json();
+        // data förväntas vara ett objekt: { member_id: true/false }
+        setAttendanceSheet(data);
+      }
+    } catch (e) {
+      console.error("Fel vid hämtning av närvaro för datum:", e);
+    }
+  }
+
   useEffect(() => { load(); }, [groupName]);
+
+  useEffect(() => {
+    fetchAttendanceForDate();
+  }, [selectedDate, members]);
 
   function showToast(msg) {
     setToast(msg);
@@ -283,6 +310,37 @@ export default function GroupDashboard() {
   function handleSmsSent(method) {
     setSmsTarget(null);
     showToast(method === 'api' ? '✓ SMS skickat via 46elks' : '📱 SMS-app öppnad');
+  }
+
+  // Ändra checkbox-status lokalt
+  function handleCheckboxChange(memberId) {
+    setAttendanceSheet(prev => ({
+      ...prev,
+      [memberId]: !prev[memberId]
+    }));
+  }
+
+  // Spara närvaro till backend databasen
+  async function saveAttendance() {
+    setSavingAttendance(true);
+    try {
+      const res = await fetch('/api/members/attendance-date', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          group_name: groupName,
+          date: selectedDate,
+          attendance: attendanceSheet
+        })
+      });
+      if (!res.ok) throw new Error('Kunde inte spara närvaro');
+      showToast('✓ Närvarolistan har sparats!');
+      load(); // Ladda om statistiken på skärmen
+    } catch (e) {
+      showToast('❌ Fel: ' + e.message);
+    } finally {
+      setSavingAttendance(false);
+    }
   }
 
   return (
@@ -365,11 +423,31 @@ export default function GroupDashboard() {
           </section>
         )}
 
-        {/* Alla medlemmar */}
+        {/* Alla medlemmar & Närvarohantering */}
         <section>
-          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
-            Alla medlemmar ({members.length})
-          </h2>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">
+              Alla medlemmar ({members.length})
+            </h2>
+            
+            {/* NYTT: DATUMVÄLJARE OCH SPARA-KNAPP */}
+            <div className="flex items-center gap-2 bg-white p-1.5 rounded-xl border border-gray-200 shadow-sm">
+              <input 
+                type="date" 
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="text-xs font-medium focus:outline-none text-gray-700 px-2 py-1"
+              />
+              <button
+                onClick={saveAttendance}
+                disabled={savingAttendance || members.length === 0}
+                className="bg-green-600 text-white text-xs rounded-lg px-3 py-1.5 hover:bg-green-700 font-semibold disabled:opacity-50 transition-colors"
+              >
+                {savingAttendance ? 'Sparar...' : 'Spara närvaro'}
+              </button>
+            </div>
+          </div>
+
           {loading ? (
             <div className="flex justify-center py-8">
               <div className="w-6 h-6 border-4 border-scout-200 border-t-scout-600 rounded-full animate-spin" />
@@ -384,6 +462,8 @@ export default function GroupDashboard() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b border-gray-100">
                   <tr>
+                    {/* NYTT: KOLUMN FÖR CHECKBOX */}
+                    <th className="text-center px-4 py-3 font-medium text-gray-500 text-xs uppercase tracking-wide w-16">Här</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs uppercase tracking-wide">Namn</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs uppercase tracking-wide hidden sm:table-cell">Kontakt</th>
                     <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs uppercase tracking-wide">Närvaro</th>
@@ -393,6 +473,15 @@ export default function GroupDashboard() {
                 <tbody className="divide-y divide-gray-50">
                   {members.map(m => (
                     <tr key={m.id} className="hover:bg-gray-50 transition-colors">
+                      {/* NYTT: CHECKBOX CELL */}
+                      <td className="px-4 py-3 text-center">
+                        <input
+                          type="checkbox"
+                          checked={!!attendanceSheet[m.id]}
+                          onChange={() => handleCheckboxChange(m.id)}
+                          className="w-5 h-5 rounded border-gray-300 text-scout-700 focus:ring-scout-500 cursor-pointer"
+                        />
+                      </td>
                       <td className="px-4 py-3">
                         <p className="font-medium text-gray-900">{m.first_name} {m.last_name}</p>
                         {/* Visa kontakt på mobil */}
@@ -445,7 +534,7 @@ export default function GroupDashboard() {
             </button>
           </div>
           {announcements.length === 0 ? (
-            <p className="text-gray-400 text-sm">Inga meddelanden ännu.</p>
+            <p className="text-gray-400 text-sm">Inga medmeldanden ännu.</p>
           ) : (
             <div className="space-y-2">
               {announcements.map(a => (
