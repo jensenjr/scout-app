@@ -269,8 +269,9 @@ export default function GroupDashboard() {
       setFlagged(flaggedData);
       setMembers(membersData);
       setAnnouncements(announcementsData);
-    } Object.entries(attendanceSheet)
-    finally {
+    } catch (e) {
+      console.error('Kunde inte ladda data', e);
+    } finally {
       setLoading(false);
     }
   }
@@ -311,7 +312,6 @@ export default function GroupDashboard() {
     }));
   }
 
-  // Funktion för att bocka i ALLA eller ur ALLA medlemmar på en gång
   function toggleSelectAll(checked) {
     const nextSheet = {};
     members.forEach(m => {
@@ -320,7 +320,6 @@ export default function GroupDashboard() {
     setAttendanceSheet(nextSheet);
   }
 
-  // Kollar om ALLA är ikryssade i nuläget
   const isAllSelected = members.length > 0 && members.every(m => !!attendanceSheet[m.id]);
 
   async function saveAttendance() {
@@ -346,7 +345,6 @@ export default function GroupDashboard() {
   }
 
   function renderContactCell(m) {
-    // 1. Kolla om scouten har ett eget mobilnummer registrerat
     if (m.scout_phone) {
       return (
         <div>
@@ -357,7 +355,6 @@ export default function GroupDashboard() {
         </div>
       );
     }
-    // 2. Om eget saknas, backa upp på Anhörig 1
     if (m.parent_name_1 || m.parent_phone) {
       return (
         <div>
@@ -372,7 +369,6 @@ export default function GroupDashboard() {
         </div>
       );
     }
-    // 3. Om Anhörig 1 saknas, kolla Anhörig 2
     if (m.parent_name_2 || m.parent_phone_2) {
       return (
         <div>
@@ -387,7 +383,6 @@ export default function GroupDashboard() {
         </div>
       );
     }
-    // 4. Det finns inga uppgifter alls i systemet
     return (
       <span className="text-xs font-medium text-red-500 bg-red-50 border border-red-100 rounded px-1.5 py-0.5">
         ⚠️ Saknas helt i ScoutNet
