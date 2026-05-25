@@ -7,7 +7,7 @@ export default function Admin() {
   const [configs, setConfigs] = useState([]);
   const [lastImportDate, setLastImportDate] = useState(null);
   const [file, setFile] = useState(null);
-  const [importType, setImportType] = useState('csv'); // Standard till din nya fungerande csv-mottagare
+  const [importType, setImportType] = useState('csv');
   const [importing, setImporting] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
 
@@ -58,7 +58,6 @@ export default function Admin() {
     const formData = new FormData();
     formData.append('file', file);
 
-    // Välj endpoint dynamiskt beroende på filtyp (excel eller csv)
     const endpoint = importType === 'excel' ? '/api/import/excel' : '/api/import/csv';
 
     try {
@@ -68,9 +67,9 @@ export default function Admin() {
       });
       const data = await res.json();
       if (res.ok) {
-        setStatusMsg(`✓ Lyckades! Importerade ${data.count || 0} medlemmar framgångsrikt.`);
+        setStatusMsg(`✓ Lyckades! Importerade/uppdaterade ${data.count || 0} medlemmar framgångsrikt.`);
         setFile(null);
-        loadAdminData(); // Läs om tidsstämpel
+        loadAdminData();
       } else {
         setStatusMsg(`❌ Fel vid import: ${data.error || 'Okänt fel'}`);
       }
@@ -96,24 +95,28 @@ export default function Admin() {
 
       <main className="max-w-xl mx-auto px-4 py-6 space-y-6">
         
-        {/* Sektion 1: Filtrera åldersgrupper */}
+        {/* Sektion 1: Filtrera kårens verkliga avdelningar */}
         <section className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
-          <h2 className="text-sm font-bold text-gray-800 uppercase tracking-wide mb-1">Synliga Åldersgrupper</h2>
-          <p className="text-xs text-gray-400 mb-4">Bocka ur de programgrupper eller medlemskategorier du vill dölja från startsidan.</p>
+          <h2 className="text-sm font-bold text-gray-800 uppercase tracking-wide mb-1">Synliga avdelningar i kåren</h2>
+          <p className="text-xs text-gray-400 mb-4">Här visas de avdelningar som hittades i din medlemsfil. Bocka ur de du vill dölja från startsidan.</p>
           
-          <div className="divide-y divide-gray-50 border border-gray-100 rounded-xl overflow-hidden">
-            {configs.map(c => (
-              <label key={c.group_name} className="flex items-center justify-between p-3.5 hover:bg-gray-50 cursor-pointer transition-colors">
-                <span className="text-sm font-medium text-gray-700">{c.group_name}</span>
-                <input
-                  type="checkbox"
-                  checked={c.is_active === 1}
-                  onChange={() => toggleGroup(c.group_name, c.is_active)}
-                  className="w-5 h-5 rounded border-gray-300 text-scout-700 focus:ring-scout-500 cursor-pointer"
-                />
-              </label>
-            ))}
-          </div>
+          {configs.length === 0 ? (
+            <p className="text-xs text-gray-400 italic bg-gray-50 border rounded-xl p-4 text-center">Inga avdelningar inlästa ännu. Ladda upp en medlemsfil nedan.</p>
+          ) : (
+            <div className="divide-y divide-gray-50 border border-gray-100 rounded-xl overflow-hidden bg-white shadow-inner max-h-64 overflow-y-auto">
+              {configs.map(c => (
+                <label key={c.group_name} className="flex items-center justify-between p-3.5 hover:bg-gray-50 cursor-pointer transition-colors">
+                  <span className="text-sm font-medium text-gray-700">{c.group_name}</span>
+                  <input
+                    type="checkbox"
+                    checked={c.is_active === 1}
+                    onChange={() => toggleGroup(c.group_name, c.is_active)}
+                    className="w-5 h-5 rounded border-gray-300 text-scout-700 focus:ring-scout-500 cursor-pointer"
+                  />
+                </label>
+              ))}
+            </div>
+          )}
         </section>
 
         {/* Sektion 2: Filimport */}
