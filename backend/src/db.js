@@ -144,6 +144,22 @@ const db = {
         body TEXT NOT NULL,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
+
+      /* NYTT FÖR STEG 1: Konfigurationstabell för åldersgrupper */
+      CREATE TABLE IF NOT EXISTS age_group_configs (
+        group_name TEXT PRIMARY KEY,
+        is_active INTEGER DEFAULT 1
+      );
+
+      /* Standardvärden baserade på Scouternas programgrupper */
+      INSERT OR IGNORE INTO age_group_configs (group_name, is_active) VALUES ('Familjescouting', 1);
+      INSERT OR IGNORE INTO age_group_configs (group_name, is_active) VALUES ('Spårare', 1);
+      INSERT OR IGNORE INTO age_group_configs (group_name, is_active) VALUES ('Upptäckare', 1);
+      INSERT OR IGNORE INTO age_group_configs (group_name, is_active) VALUES ('Äventyrare', 1);
+      INSERT OR IGNORE INTO age_group_configs (group_name, is_active) VALUES ('Utmanare', 1);
+      INSERT OR IGNORE INTO age_group_configs (group_name, is_active) VALUES ('Rover', 1);
+      INSERT OR IGNORE INTO age_group_configs (group_name, is_active) VALUES ('Supporters', 0);
+      INSERT OR IGNORE INTO age_group_configs (group_name, is_active) VALUES ('Passiva', 0);
     `);
 
     // Migrate: add new columns if they don't exist yet (safe to run on existing DB)
