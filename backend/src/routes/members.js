@@ -3,7 +3,6 @@ const db = require('../db');
 
 const router = express.Router();
 
-// GET /api/members/age-configs — Get visible group filter metrics
 router.get('/age-configs', (req, res) => {
   try {
     const rows = db.prepare(`SELECT group_name, is_active FROM age_group_configs ORDER BY group_name`).all();
@@ -13,7 +12,6 @@ router.get('/age-configs', (req, res) => {
   }
 });
 
-// POST /api/members/age-configs — Alter structural visibility states
 router.post('/age-configs', (req, res) => {
   const { group_name, is_active } = req.body;
   try {
@@ -28,23 +26,28 @@ router.post('/age-configs', (req, res) => {
   }
 });
 
-// GET /api/members/groups — Reads distinct groups filtered by active rules configuration
+// Uppdaterad slutpunkt som filtrerar bort oaktiva åldersgrupper mer träffsäkert
 router.get('/groups', (req, res) => {
   try {
-    const rows = db.prepare(`
-      SELECT DISTINCT group_name FROM members 
-      WHERE group_name NOT IN (
-        SELECT group_name FROM age_group_configs WHERE is_active = 0
-      )
-      ORDER BY group_name
-    `).all();
-    res.json(rows.map(r => r.group_name));
+    // Hämta alla unika avdelningsnamn
+    const allGroups = db.prepare(`SELECT DISTINCT group_name FROM members ORDER BY group_name`).all();
+    // Hämta de åldersgrupper som administratören har valt att inaktivera
+    const inactiveConfigs = db.prepare(`SELECT group_name FROM age_group_configs WHERE is_active = 0`).all().map(c => c.group_name.toLowerCase());
+
+    // Filtrera bort avdelningar som innehåller namnet på en inaktiverad programgrupp
+    const activeGroups = allGroups
+      .map(r => r.group_name)
+      .filter(name => {
+        const lowerName = name.toLowerCase();
+        return !inactiveConfigs.some(inactive => lowerName.includes(inactive));
+      });
+
+    res.json(activeGroups);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// GET /api/members/attendance-date — Attendance list for a specific date
 router.get('/attendance-date', (req, res) => {
   const { group, date } = req.query;
   if (!group || !date) return res.status(400).json({ error: 'Saknar grupp eller datum' });
@@ -67,7 +70,6 @@ router.get('/attendance-date', (req, res) => {
   }
 });
 
-// POST /api/members/attendance-date — Save attendance list
 router.post('/attendance-date', (req, res) => {
   const { group_name, date, attendance } = req.body;
   if (!group_name || !date || !attendance) {
@@ -99,7 +101,6 @@ router.post('/attendance-date', (req, res) => {
   }
 });
 
-// GET /api/members — List members in a group
 router.get('/', (req, res) => {
   const group = req.query.group;
   const query = group
@@ -125,7 +126,6 @@ router.get('/', (req, res) => {
   res.json(rows);
 });
 
-// GET /api/members/flagged — List flagged absent members
 router.get('/flagged', (req, res) => {
   const group = req.query.group;
 
@@ -173,7 +173,6 @@ router.get('/flagged', (req, res) => {
   res.json(flagged);
 });
 
-// PUT /api/members/:id — Update tracking metadata info
 router.put('/:id', (req, res) => {
   const { parent_phone, parent_name_1, parent_phone_2, parent_name_2 } = req.body;
   const { id } = req.params;
