@@ -1,33 +1,51 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import ScoutLogo from '../components/ScoutLogo';
 
-const GROUP_LABELS = {
-  baver: 'Bäver',
-  spejare: 'Spejare',
-  aventyrare: 'Äventyrare',
-  rovare: 'Rovare',
-};
+// SMS-mall på svenska
+function smsTemplate(firstName) {
+  return `Hej! Vi har märkt att ${firstName} inte har varit med på de senaste mötena. Vi saknar er och hoppas att allt är bra. Hör gärna av er om ni har frågor eller om ${firstName} vill sluta. Hälsningar, Scouterna i Mellerud`;
+}
 
+// Formatera telefonnummer för visning
+function displayPhone(phone) {
+  if (!phone) return null;
+  return phone.replace(/^(\+46)(\d{2})(\d{3})(\d{2})(\d{2})$/, '$1 $2 $3 $4 $5');
+}
+
+// SMS-modal med två alternativ: 46elks API eller enhetens SMS-app
 function SmsModal({ member, onClose, onSent }) {
-  const template = `Hej! Vi har märkt att ${member.first_name} inte har varit med på de senaste mötena. Vi saknar er och undrar om allt är okej. Hör gärna av er till oss om ni har frågor eller om ${member.first_name} vill sluta. Hälsningar, Scouterna i Mellerud`;
-  const [phone, setPhone] = useState(member.parent_phone || '');
-  const [message, setMessage] = useState(template);
+  const [activeGuardian, setActiveGuardian] = useState(
+    member.parent_phone ? 1 : member.parent_phone_2 ? 2 : 1
+  );
+  const [message, setMessage] = useState(smsTemplate(member.first_name));
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
+  const [customPhone, setCustomPhone] = useState('');
+  const [useCustom, setUseCustom] = useState(false);
 
-  async function send() {
-    if (!phone) return setError('Ange ett telefonnummer');
+  const phone1 = member.parent_phone;
+  const phone2 = member.parent_phone_2;
+  const name1  = member.parent_name_1 || 'Anhörig 1';
+  const name2  = member.parent_name_2 || 'Anhörig 2';
+
+  const activePhone = useCustom ? customPhone : (activeGuardian === 1 ? phone1 : phone2);
+  const hasPhone = !!activePhone;
+
+  // SMS via 46elks API
+  async function sendViaApi() {
+    if (!hasPhone) return setError('Inget telefonnummer valt');
     setSending(true);
     setError('');
     try {
       const res = await fetch('/api/sms/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ memberId: member.id, phone, message }),
+        body: JSON.stringify({ memberId: member.id, phone: activePhone, message }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Fel vid sändning');
-      onSent();
+      onSent('api');
     } catch (e) {
       setError(e.message);
     } finally {
@@ -35,46 +53,135 @@ function SmsModal({ member, onClose, onSent }) {
     }
   }
 
+  // SMS via enhetens SMS-app (deeplink)
+  function sendViaPhone() {
+    if (!hasPhone) return setError('Inget telefonnummer valt');
+    const encoded = encodeURIComponent(message);
+    const to = activePhone.replace(/\s/g, '');
+    // sms:-länk fungerar på iOS och Android
+    window.location.href = `sms:${to}?body=${encoded}`;
+    onSent('phone');
+  }
+
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl p-6 w-full max-w-lg shadow-xl">
-        <h2 className="text-xl font-bold text-gray-900 mb-4">
-          Skicka SMS till {member.first_name}s förälder
-        </h2>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Telefonnummer</label>
-        <input
-          className="w-full border rounded-lg p-2 mb-4 text-sm"
-          value={phone}
-          onChange={e => setPhone(e.target.value)}
-          placeholder="+46701234567"
-        />
-        <label className="block text-sm font-medium text-gray-700 mb-1">Meddelande</label>
-        <textarea
-          className="w-full border rounded-lg p-2 mb-4 text-sm h-32 resize-none"
-          value={message}
-          onChange={e => setMessage(e.target.value)}
-        />
-        {error && <p className="text-red-600 text-sm mb-3">{error}</p>}
-        <div className="flex gap-3">
-          <button
-            onClick={send}
-            disabled={sending}
-            className="flex-1 bg-green-600 text-white rounded-lg py-2 font-medium hover:bg-green-700 disabled:opacity-50"
-          >
-            {sending ? 'Skickar...' : 'Skicka SMS'}
-          </button>
-          <button
-            onClick={onClose}
-            className="px-4 border rounded-lg text-gray-600 hover:bg-gray-50"
-          >
-            Avbryt
-          </button>
+    <div className="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+      <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full sm:max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
+        {/* Header */}
+        <div className="px-5 pt-5 pb-3 border-b border-gray-100">
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-bold text-gray-900">
+              Kontakta angående {member.first_name}
+            </h2>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+          </div>
+          <p className="text-xs text-gray-400 mt-0.5">
+            Missat {member.consecutive_missed} möten i rad
+          </p>
+        </div>
+
+        <div className="px-5 py-4 space-y-4">
+          {/* Välj anhörig */}
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Skicka till</p>
+            <div className="space-y-2">
+              {phone1 && (
+                <button
+                  onClick={() => { setActiveGuardian(1); setUseCustom(false); }}
+                  className={`w-full text-left border rounded-xl px-4 py-3 transition-colors ${
+                    activeGuardian === 1 && !useCustom
+                      ? 'border-scout-500 bg-scout-50'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <span className="font-medium text-sm text-gray-800">{name1}</span>
+                  <span className="block text-xs text-gray-500 mt-0.5 font-mono">{displayPhone(phone1)}</span>
+                </button>
+              )}
+              {phone2 && (
+                <button
+                  onClick={() => { setActiveGuardian(2); setUseCustom(false); }}
+                  className={`w-full text-left border rounded-xl px-4 py-3 transition-colors ${
+                    activeGuardian === 2 && !useCustom
+                      ? 'border-scout-500 bg-scout-50'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <span className="font-medium text-sm text-gray-800">{name2}</span>
+                  <span className="block text-xs text-gray-500 mt-0.5 font-mono">{displayPhone(phone2)}</span>
+                </button>
+              )}
+              {!phone1 && !phone2 && (
+                <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                  Inga telefonnummer sparade. Fyll i nedan eller importera från ScoutNet.
+                </p>
+              )}
+              {/* Annat nummer */}
+              <div>
+                <button
+                  onClick={() => setUseCustom(v => !v)}
+                  className={`text-xs font-medium text-scout-600 hover:text-scout-800 ${useCustom ? 'underline' : ''}`}
+                >
+                  {useCustom ? '▾' : '▸'} Ange annat nummer
+                </button>
+                {useCustom && (
+                  <input
+                    className="mt-2 w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-scout-400"
+                    placeholder="+46701234567"
+                    value={customPhone}
+                    onChange={e => setCustomPhone(e.target.value)}
+                    type="tel"
+                    autoFocus
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Meddelandetext */}
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Meddelande</p>
+            <textarea
+              className="w-full border border-gray-300 rounded-xl p-3 text-sm h-32 resize-none focus:outline-none focus:ring-2 focus:ring-scout-400"
+              value={message}
+              onChange={e => setMessage(e.target.value)}
+            />
+            <p className="text-xs text-gray-400 mt-1">{message.length} tecken</p>
+          </div>
+
+          {error && (
+            <p className="text-red-600 text-sm bg-red-50 border border-red-200 rounded-xl px-3 py-2">{error}</p>
+          )}
+
+          {/* Knappar */}
+          <div className="space-y-2 pb-2">
+            <button
+              onClick={sendViaPhone}
+              disabled={!hasPhone}
+              className="w-full bg-scout-700 text-white rounded-xl py-3 font-semibold text-sm hover:bg-scout-800 active:scale-[0.98] transition-all disabled:opacity-40 flex items-center justify-center gap-2"
+            >
+              <span>📱</span> Skicka från min telefon
+            </button>
+            <button
+              onClick={sendViaApi}
+              disabled={sending || !hasPhone}
+              className="w-full bg-white border border-scout-300 text-scout-700 rounded-xl py-3 font-semibold text-sm hover:bg-scout-50 active:scale-[0.98] transition-all disabled:opacity-40 flex items-center justify-center gap-2"
+            >
+              <span>⚡</span> {sending ? 'Skickar...' : 'Skicka via 46elks API'}
+            </button>
+            <button
+              onClick={onClose}
+              className="w-full text-gray-400 hover:text-gray-600 text-sm py-2"
+            >
+              Avbryt
+            </button>
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
+// Modal för nytt meddelande
 function AnnouncementModal({ groupName, onClose, onPosted }) {
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
@@ -102,17 +209,20 @@ function AnnouncementModal({ groupName, onClose, onPosted }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl p-6 w-full max-w-lg shadow-xl">
-        <h2 className="text-xl font-bold text-gray-900 mb-4">Nytt meddelande</h2>
+    <div className="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+      <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full sm:max-w-lg shadow-2xl p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-bold text-gray-900">Nytt meddelande</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+        </div>
         <input
-          className="w-full border rounded-lg p-2 mb-3 text-sm"
+          className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-scout-400"
           placeholder="Titel"
           value={title}
           onChange={e => setTitle(e.target.value)}
         />
         <textarea
-          className="w-full border rounded-lg p-2 mb-4 text-sm h-28 resize-none"
+          className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm h-28 resize-none mb-3 focus:outline-none focus:ring-2 focus:ring-scout-400"
           placeholder="Skriv meddelandet här..."
           value={body}
           onChange={e => setBody(e.target.value)}
@@ -122,11 +232,11 @@ function AnnouncementModal({ groupName, onClose, onPosted }) {
           <button
             onClick={post}
             disabled={saving}
-            className="flex-1 bg-green-600 text-white rounded-lg py-2 font-medium hover:bg-green-700 disabled:opacity-50"
+            className="flex-1 bg-scout-700 text-white rounded-xl py-2.5 font-semibold text-sm hover:bg-scout-800 disabled:opacity-50"
           >
             {saving ? 'Sparar...' : 'Publicera'}
           </button>
-          <button onClick={onClose} className="px-4 border rounded-lg text-gray-600 hover:bg-gray-50">
+          <button onClick={onClose} className="px-4 border border-gray-200 rounded-xl text-gray-500 hover:bg-gray-50 text-sm">
             Avbryt
           </button>
         </div>
@@ -138,7 +248,6 @@ function AnnouncementModal({ groupName, onClose, onPosted }) {
 export default function GroupDashboard() {
   const { groupName } = useParams();
   const navigate = useNavigate();
-  const label = GROUP_LABELS[groupName] || groupName;
 
   const [flagged, setFlagged] = useState([]);
   const [members, setMembers] = useState([]);
@@ -146,15 +255,15 @@ export default function GroupDashboard() {
   const [loading, setLoading] = useState(true);
   const [smsTarget, setSmsTarget] = useState(null);
   const [showAnnouncement, setShowAnnouncement] = useState(false);
-  const [smsSent, setSmsSent] = useState(false);
+  const [toast, setToast] = useState('');
 
   async function load() {
     setLoading(true);
     try {
       const [fRes, mRes, aRes] = await Promise.all([
-        fetch(`/api/members/flagged?group=${groupName}`),
-        fetch(`/api/members?group=${groupName}`),
-        fetch(`/api/announcements?group=${groupName}`),
+        fetch(`/api/members/flagged?group=${encodeURIComponent(groupName)}`),
+        fetch(`/api/members?group=${encodeURIComponent(groupName)}`),
+        fetch(`/api/announcements?group=${encodeURIComponent(groupName)}`),
       ]);
       setFlagged(await fRes.json());
       setMembers(await mRes.json());
@@ -166,10 +275,14 @@ export default function GroupDashboard() {
 
   useEffect(() => { load(); }, [groupName]);
 
-  function handleSmsSent() {
+  function showToast(msg) {
+    setToast(msg);
+    setTimeout(() => setToast(''), 3500);
+  }
+
+  function handleSmsSent(method) {
     setSmsTarget(null);
-    setSmsSent(true);
-    setTimeout(() => setSmsSent(false), 3000);
+    showToast(method === 'api' ? '✓ SMS skickat via 46elks' : '📱 SMS-app öppnad');
   }
 
   return (
@@ -190,40 +303,61 @@ export default function GroupDashboard() {
       )}
 
       {/* Header */}
-      <div className="bg-green-700 text-white px-4 py-4">
-        <div className="max-w-3xl mx-auto flex items-center gap-3">
-          <button onClick={() => navigate('/')} className="text-green-200 hover:text-white text-sm">
-            ← Tillbaka
+      <header className="bg-scout-700 text-white">
+        <div className="max-w-3xl mx-auto px-4 py-4 flex items-center gap-3">
+          <button
+            onClick={() => navigate('/')}
+            className="text-scout-200 hover:text-white p-1"
+            aria-label="Tillbaka"
+          >
+            ←
           </button>
-          <h1 className="text-xl font-bold">{label}</h1>
-        </div>
-      </div>
-
-      <div className="max-w-3xl mx-auto px-4 py-6 space-y-8">
-        {smsSent && (
-          <div className="bg-green-100 border border-green-300 text-green-800 rounded-lg p-3 text-sm">
-            SMS skickades!
+          <ScoutLogo size={28} white />
+          <div>
+            <h1 className="text-base font-bold leading-tight">{groupName}</h1>
+            <p className="text-scout-200 text-xs">Melleruds Scoutkår</p>
           </div>
-        )}
+        </div>
+      </header>
 
-        {/* Flagged members */}
+      {/* Toast */}
+      {toast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-gray-900 text-white text-sm rounded-2xl px-5 py-3 shadow-xl">
+          {toast}
+        </div>
+      )}
+
+      <div className="max-w-3xl mx-auto px-4 py-5 space-y-6">
+
+        {/* Flaggade — behöver uppmärksamhet */}
         {flagged.length > 0 && (
           <section>
-            <h2 className="text-lg font-semibold text-gray-800 mb-3">Behöver uppmärksamhet</h2>
-            <div className="space-y-3">
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
+              Saknas från möten
+            </h2>
+            <div className="space-y-2">
               {flagged.map(m => (
-                <div key={m.id} className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center justify-between gap-3">
-                  <div>
-                    <p className="font-semibold text-red-900">{m.first_name} {m.last_name}</p>
-                    <p className="text-sm text-red-600">
-                      Missat {m.consecutive_missed} möten i rad
+                <div
+                  key={m.id}
+                  className="bg-white border border-red-200 rounded-2xl p-4 flex items-center justify-between gap-3 shadow-sm"
+                >
+                  <div className="min-w-0">
+                    <p className="font-semibold text-gray-900">{m.first_name} {m.last_name}</p>
+                    <p className="text-xs text-red-600 mt-0.5">
+                      Borta {m.consecutive_missed} möten i rad
                     </p>
+                    {(m.parent_name_1 || m.parent_phone) && (
+                      <p className="text-xs text-gray-400 mt-1 truncate">
+                        {m.parent_name_1 && <span>{m.parent_name_1} · </span>}
+                        {m.parent_phone && <span className="font-mono">{displayPhone(m.parent_phone)}</span>}
+                      </p>
+                    )}
                   </div>
                   <button
                     onClick={() => setSmsTarget(m)}
-                    className="bg-red-600 text-white text-sm rounded-lg px-3 py-2 hover:bg-red-700 shrink-0"
+                    className="bg-scout-700 text-white text-xs rounded-xl px-3.5 py-2 hover:bg-scout-800 active:scale-95 transition-all shrink-0 font-medium"
                   >
-                    Skicka SMS
+                    Var är {m.first_name}?
                   </button>
                 </div>
               ))}
@@ -231,33 +365,62 @@ export default function GroupDashboard() {
           </section>
         )}
 
-        {/* Full attendance list */}
+        {/* Alla medlemmar */}
         <section>
-          <h2 className="text-lg font-semibold text-gray-800 mb-3">Alla medlemmar</h2>
+          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
+            Alla medlemmar ({members.length})
+          </h2>
           {loading ? (
-            <p className="text-gray-500 text-sm">Laddar...</p>
+            <div className="flex justify-center py-8">
+              <div className="w-6 h-6 border-4 border-scout-200 border-t-scout-600 rounded-full animate-spin" />
+            </div>
           ) : members.length === 0 ? (
-            <p className="text-gray-500 text-sm">Inga medlemmar hittade. Importera data i adminpanelen.</p>
+            <div className="bg-white rounded-2xl border p-5 text-center">
+              <p className="text-gray-500 text-sm">Inga medlemmar i denna avdelning.</p>
+              <p className="text-gray-400 text-xs mt-1">Importera Excel-fil i adminpanelen.</p>
+            </div>
           ) : (
-            <div className="bg-white rounded-xl border overflow-hidden">
+            <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
               <table className="w-full text-sm">
-                <thead className="bg-gray-50 border-b">
+                <thead className="bg-gray-50 border-b border-gray-100">
                   <tr>
-                    <th className="text-left p-3 font-medium text-gray-600">Namn</th>
-                    <th className="text-right p-3 font-medium text-gray-600">Närvaro</th>
-                    <th className="text-right p-3 font-medium text-gray-600">Senast sedd</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs uppercase tracking-wide">Namn</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs uppercase tracking-wide hidden sm:table-cell">Kontakt</th>
+                    <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs uppercase tracking-wide">Närvaro</th>
+                    <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs uppercase tracking-wide hidden sm:table-cell">Senast</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-gray-50">
                   {members.map(m => (
-                    <tr key={m.id} className="hover:bg-gray-50">
-                      <td className="p-3 font-medium text-gray-900">
-                        {m.first_name} {m.last_name}
+                    <tr key={m.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-gray-900">{m.first_name} {m.last_name}</p>
+                        {/* Visa kontakt på mobil */}
+                        {(m.parent_name_1 || m.parent_phone) && (
+                          <p className="text-xs text-gray-400 mt-0.5 sm:hidden truncate">
+                            {m.parent_name_1 || displayPhone(m.parent_phone)}
+                          </p>
+                        )}
                       </td>
-                      <td className="p-3 text-right text-gray-600">
+                      <td className="px-4 py-3 hidden sm:table-cell">
+                        {m.parent_phone ? (
+                          <div>
+                            {m.parent_name_1 && <p className="text-xs text-gray-600">{m.parent_name_1}</p>}
+                            <a
+                              href={`tel:${m.parent_phone}`}
+                              className="text-xs text-scout-600 font-mono hover:underline"
+                            >
+                              {displayPhone(m.parent_phone)}
+                            </a>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-gray-300">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right text-gray-600 tabular-nums text-xs">
                         {m.attended ?? 0}/{m.total_meetings ?? 0}
                       </td>
-                      <td className="p-3 text-right text-gray-500">
+                      <td className="px-4 py-3 text-right text-gray-400 text-xs hidden sm:table-cell">
                         {m.last_seen ?? '—'}
                       </td>
                     </tr>
@@ -268,26 +431,28 @@ export default function GroupDashboard() {
           )}
         </section>
 
-        {/* Announcements */}
+        {/* Meddelanden */}
         <section>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold text-gray-800">Meddelanden</h2>
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">
+              Meddelanden
+            </h2>
             <button
               onClick={() => setShowAnnouncement(true)}
-              className="bg-green-600 text-white text-sm rounded-lg px-3 py-2 hover:bg-green-700"
+              className="bg-scout-700 text-white text-xs rounded-xl px-3.5 py-2 hover:bg-scout-800 font-medium"
             >
-              + Nytt meddelande
+              + Nytt
             </button>
           </div>
           {announcements.length === 0 ? (
-            <p className="text-gray-500 text-sm">Inga meddelanden ännu.</p>
+            <p className="text-gray-400 text-sm">Inga meddelanden ännu.</p>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {announcements.map(a => (
-                <div key={a.id} className="bg-white border rounded-xl p-4">
-                  <p className="font-semibold text-gray-900">{a.title}</p>
-                  <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{a.body}</p>
-                  <p className="text-xs text-gray-400 mt-2">
+                <div key={a.id} className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm">
+                  <p className="font-semibold text-gray-900 text-sm">{a.title}</p>
+                  <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap leading-relaxed">{a.body}</p>
+                  <p className="text-xs text-gray-300 mt-2">
                     {new Date(a.created_at).toLocaleDateString('sv-SE')}
                   </p>
                 </div>

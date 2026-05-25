@@ -105,11 +105,15 @@ const db = {
     _raw.exec(`
       CREATE TABLE IF NOT EXISTS members (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        scoutnet_member_id INTEGER,
         first_name TEXT NOT NULL,
-        last_name TEXT NOT NULL,
+        last_name TEXT,
         group_name TEXT NOT NULL,
         scalpnet_url TEXT,
         parent_phone TEXT,
+        parent_name_1 TEXT,
+        parent_phone_2 TEXT,
+        parent_name_2 TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(first_name, last_name, group_name)
       );
@@ -141,6 +145,19 @@ const db = {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
     `);
+
+    // Migrate: add new columns if they don't exist yet (safe to run on existing DB)
+    const existingCols = _raw.exec("PRAGMA table_info(members)");
+    const colNames = existingCols[0]?.values.map(r => r[1]) || [];
+    const addIfMissing = (col, def) => {
+      if (!colNames.includes(col)) {
+        _raw.run(`ALTER TABLE members ADD COLUMN ${col} ${def}`);
+      }
+    };
+    addIfMissing('scoutnet_member_id', 'INTEGER');
+    addIfMissing('parent_name_1', 'TEXT');
+    addIfMissing('parent_phone_2', 'TEXT');
+    addIfMissing('parent_name_2', 'TEXT');
 
     _save();
   },

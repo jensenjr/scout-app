@@ -3,7 +3,15 @@ const db = require('../db');
 
 const router = express.Router();
 
-// GET /api/members?group=rovare
+// GET /api/members/groups — distinct groups in DB
+router.get('/groups', (req, res) => {
+  const rows = db.prepare(
+    `SELECT DISTINCT group_name FROM members ORDER BY group_name`
+  ).all();
+  res.json(rows.map(r => r.group_name));
+});
+
+// GET /api/members?group=Utmanarna
 router.get('/', (req, res) => {
   const group = req.query.group;
   const query = group
@@ -15,7 +23,7 @@ router.get('/', (req, res) => {
        LEFT JOIN attendance a ON a.member_id = m.id
        WHERE LOWER(m.group_name) = LOWER(?)
        GROUP BY m.id
-       ORDER BY m.last_name, m.first_name`
+       ORDER BY m.first_name`
     : `SELECT m.*,
          COUNT(a.id) AS total_meetings,
          SUM(CASE WHEN a.present = 1 THEN 1 ELSE 0 END) AS attended,
@@ -23,24 +31,26 @@ router.get('/', (req, res) => {
        FROM members m
        LEFT JOIN attendance a ON a.member_id = m.id
        GROUP BY m.id
-       ORDER BY m.last_name, m.first_name`;
+       ORDER BY m.first_name`;
 
   const rows = group ? db.prepare(query).all(group) : db.prepare(query).all();
   res.json(rows);
 });
 
-// GET /api/members/flagged?group=rovare
-// Members who have missed 2 or more consecutive meetings
+// GET /api/members/flagged?group=Utmanarna
 router.get('/flagged', (req, res) => {
   const group = req.query.group;
 
   const meetingDates = group
-    ? db.prepare(`SELECT DISTINCT meeting_date FROM attendance a
-                  JOIN members m ON m.id = a.member_id
-                  WHERE LOWER(m.group_name) = LOWER(?)
-                  ORDER BY meeting_date DESC LIMIT 10`).all(group).map(r => r.meeting_date)
-    : db.prepare(`SELECT DISTINCT meeting_date FROM attendance
-                  ORDER BY meeting_date DESC LIMIT 10`).all().map(r => r.meeting_date);
+    ? db.prepare(
+        `SELECT DISTINCT meeting_date FROM attendance a
+         JOIN members m ON m.id = a.member_id
+         WHERE LOWER(m.group_name) = LOWER(?)
+         ORDER BY meeting_date DESC LIMIT 10`
+      ).all(group).map(r => r.meeting_date)
+    : db.prepare(
+        `SELECT DISTINCT meeting_date FROM attendance ORDER BY meeting_date DESC LIMIT 10`
+      ).all().map(r => r.meeting_date);
 
   if (meetingDates.length < 2) return res.json([]);
 
@@ -51,10 +61,9 @@ router.get('/flagged', (req, res) => {
   const flagged = [];
 
   for (const member of members) {
-    const records = db.prepare(`
-      SELECT meeting_date, present FROM attendance
-      WHERE member_id = ? ORDER BY meeting_date DESC
-    `).all(member.id);
+    const records = db.prepare(
+      `SELECT meeting_date, present FROM attendance WHERE member_id = ? ORDER BY meeting_date DESC`
+    ).all(member.id);
 
     const recordMap = Object.fromEntries(records.map(r => [r.meeting_date, r.present]));
 
@@ -76,11 +85,18 @@ router.get('/flagged', (req, res) => {
   res.json(flagged);
 });
 
-// PUT /api/members/:id
+// PUT /api/members/:id — uppdatera kontaktinfo för anhöriga
 router.put('/:id', (req, res) => {
-  const { parent_phone } = req.body;
+  const { parent_phone, parent_name_1, parent_phone_2, parent_name_2 } = req.body;
   const { id } = req.params;
-  db.prepare(`UPDATE members SET parent_phone = ? WHERE id = ?`).run(parent_phone, id);
+  db.prepare(`
+    UPDATE members SET
+      parent_phone  = COALESCE(@parent_phone,  parent_phone),
+      parent_name_1 = COALESCE(@parent_name_1, parent_name_1),
+      parent_phone_2 = COALESCE(@parent_phone_2, parent_phone_2),
+      parent_name_2 = COALESCE(@parent_name_2, parent_name_2)
+    WHERE id = @id
+  `).run({ parent_phone, parent_name_1, parent_phone_2, parent_name_2, id });
   res.json({ success: true });
 });
 
