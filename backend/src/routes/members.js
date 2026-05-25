@@ -3,15 +3,48 @@ const db = require('../db');
 
 const router = express.Router();
 
-// GET /api/members/groups — distinct groups in DB
-router.get('/groups', (req, res) => {
-  const rows = db.prepare(
-    `SELECT DISTINCT group_name FROM members ORDER BY group_name`
-  ).all();
-  res.json(rows.map(r => r.group_name));
+// GET /api/members/age-configs — Get visible group filter metrics
+router.get('/age-configs', (req, res) => {
+  try {
+    const rows = db.prepare(`SELECT group_name, is_active FROM age_group_configs ORDER BY group_name`).all();
+    res.json(rows);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
-// GET /api/members/attendance-date — Hämta närvaro för specifikt datum och grupp
+// POST /api/members/age-configs — Alter structural visibility states
+router.post('/age-configs', (req, res) => {
+  const { group_name, is_active } = req.body;
+  try {
+    db.prepare(`
+      INSERT INTO age_group_configs (group_name, is_active)
+      VALUES (?, ?)
+      ON CONFLICT(group_name) DO UPDATE SET is_active = excluded.is_active
+    `).run(group_name, is_active);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/members/groups — Reads distinct groups filtered by active rules configuration
+router.get('/groups', (req, res) => {
+  try {
+    const rows = db.prepare(`
+      SELECT DISTINCT group_name FROM members 
+      WHERE group_name NOT IN (
+        SELECT group_name FROM age_group_configs WHERE is_active = 0
+      )
+      ORDER BY group_name
+    `).all();
+    res.json(rows.map(r => r.group_name));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/members/attendance-date — Attendance list for a specific date
 router.get('/attendance-date', (req, res) => {
   const { group, date } = req.query;
   if (!group || !date) return res.status(400).json({ error: 'Saknar grupp eller datum' });
@@ -24,7 +57,6 @@ router.get('/attendance-date', (req, res) => {
       WHERE LOWER(m.group_name) = LOWER(?) AND a.meeting_date = ?
     `).all(group, date);
 
-    // Gör om array till en mappning: { memberId: true/false }
     const sheet = {};
     rows.forEach(r => {
       sheet[r.member_id] = r.present === 1;
@@ -35,16 +67,15 @@ router.get('/attendance-date', (req, res) => {
   }
 });
 
-// POST /api/members/attendance-date — Spara/Uppdatera närvaro för ett datum
+// POST /api/members/attendance-date — Save attendance list
 router.post('/attendance-date', (req, res) => {
-  const { group_name, date, attendance } = req.body; // attendance: { "id": true/false }
+  const { group_name, date, attendance } = req.body;
   if (!group_name || !date || !attendance) {
     return res.status(400).json({ error: 'Saknar obligatorisk data' });
   }
 
   try {
     db.transaction(() => {
-      // 1. Ta bort gammal närvaro för den här gruppen på just detta datumet
       db.prepare(`
         DELETE FROM attendance 
         WHERE meeting_date = ? AND member_id IN (
@@ -52,7 +83,6 @@ router.post('/attendance-date', (req, res) => {
         )
       `).run(date, group_name);
 
-      // 2. Skjut in den nya datan rad för rad
       const insertStmt = db.prepare(`
         INSERT INTO attendance (member_id, meeting_date, present)
         VALUES (?, ?, ?)
@@ -69,7 +99,7 @@ router.post('/attendance-date', (req, res) => {
   }
 });
 
-// GET /api/members?group=Utmanarna
+// GET /api/members — List members in a group
 router.get('/', (req, res) => {
   const group = req.query.group;
   const query = group
@@ -95,7 +125,7 @@ router.get('/', (req, res) => {
   res.json(rows);
 });
 
-// GET /api/members/flagged?group=Utmanarna
+// GET /api/members/flagged — List flagged absent members
 router.get('/flagged', (req, res) => {
   const group = req.query.group;
 
@@ -143,7 +173,7 @@ router.get('/flagged', (req, res) => {
   res.json(flagged);
 });
 
-// PUT /api/members/:id — uppdatera kontaktinfo för anhöriga
+// PUT /api/members/:id — Update tracking metadata info
 router.put('/:id', (req, res) => {
   const { parent_phone, parent_name_1, parent_phone_2, parent_name_2 } = req.body;
   const { id } = req.params;
