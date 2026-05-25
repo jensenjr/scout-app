@@ -14,7 +14,7 @@ COPY frontend/package*.json ./frontend/
 RUN cd frontend && npm install && npm run build
 
 COPY backend ./backend
-COPY frontend/dist ./backend/public
+RUN cp -r ./frontend/dist ./backend/public
 
 RUN mkdir -p /app/backend/data
 
