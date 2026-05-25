@@ -12,44 +12,49 @@ router.get('/import-status', (req, res) => {
   }
 });
 
+// Hämtar alla unika avdelningar från databasen och markerar om de är synliga eller dolda
 router.get('/age-configs', (req, res) => {
   try {
-    const rows = db.prepare(`SELECT group_name, is_active FROM age_group_configs ORDER BY group_name`).all();
-    res.json(rows);
+    const allGroups = db.prepare(`SELECT DISTINCT group_name FROM members WHERE group_name IS NOT NULL AND group_name != '' ORDER BY group_name`).all();
+    const hiddenRows = db.prepare(`SELECT group_name FROM hidden_groups`).all().map(h => h.group_name.toLowerCase());
+
+    const configs = allGroups.map(g => ({
+      group_name: g.group_name,
+      is_active: hiddenRows.includes(g.group_name.toLowerCase()) ? 0 : 1
+    }));
+
+    res.json(configs);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
+// Sparar om en specifik avdelning ska gömmas eller visas
 router.post('/age-configs', (req, res) => {
   const { group_name, is_active } = req.body;
   try {
-    db.prepare(`
-      INSERT INTO age_group_configs (group_name, is_active)
-      VALUES (?, ?)
-      ON CONFLICT(group_name) DO UPDATE SET is_active = excluded.is_active
-    `).run(group_name, is_active);
+    if (is_active === 0) {
+      db.prepare(`INSERT OR IGNORE INTO hidden_groups (group_name) VALUES (?)`).run(group_name);
+    } else {
+      db.prepare(`DELETE FROM hidden_groups WHERE LOWER(group_name) = LOWER(?)`).run(group_name);
+    }
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Smart inklusionsfiltrering: Visar ENDAST avdelningar som matchar en IKRYSSAD åldersgrupp
+// Returnerar endast de unika avdelningar som INTE är dolda av användaren
 router.get('/groups', (req, res) => {
   try {
-    const allGroups = db.prepare(`SELECT DISTINCT group_name FROM members WHERE group_name IS NOT NULL AND group_name != '' ORDER BY group_name`).all();
-    const activeConfigs = db.prepare(`SELECT group_name FROM age_group_configs WHERE is_active = 1`).all().map(c => c.group_name.toLowerCase());
-
-    const activeGroups = allGroups
-      .map(r => r.group_name)
-      .filter(name => {
-        const lowerName = name.toLowerCase().trim();
-        // Avdelningen tillåts bara om dess namn innehåller någon av de aktiva/ikryssade grupperna
-        return activeConfigs.some(active => lowerName.includes(active.trim()));
-      });
-
-    res.json(activeGroups);
+    const rows = db.prepare(`
+      SELECT DISTINCT group_name FROM members 
+      WHERE group_name IS NOT NULL AND group_name != ''
+      AND LOWER(group_name) NOT IN (SELECT LOWER(group_name) FROM hidden_groups)
+      ORDER BY group_name
+    `).all();
+    
+    res.json(rows.map(r => r.group_name));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
