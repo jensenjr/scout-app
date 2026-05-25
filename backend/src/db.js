@@ -21,7 +21,6 @@ function _save() {
 function _prepareParams(args) {
   if (!args || args.length === 0) return undefined;
   if (args.length === 1 && args[0] !== null && typeof args[0] === 'object' && !Array.isArray(args[0])) {
-    // Named params — add @ prefix for sql.js
     const out = {};
     for (const [k, v] of Object.entries(args[0])) {
       const key = (k.startsWith('@') || k.startsWith(':') || k.startsWith('$')) ? k : `@${k}`;
@@ -29,7 +28,7 @@ function _prepareParams(args) {
     }
     return out;
   }
-  return args; // positional array
+  return args;
 }
 
 class StmtWrapper {
@@ -110,6 +109,7 @@ const db = {
         last_name TEXT,
         group_name TEXT NOT NULL,
         scalpnet_url TEXT,
+        scout_phone TEXT,
         parent_phone TEXT,
         parent_name_1 TEXT,
         parent_phone_2 TEXT,
@@ -145,24 +145,25 @@ const db = {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
 
-      /* NYTT FÖR STEG 1: Konfigurationstabell för åldersgrupper */
       CREATE TABLE IF NOT EXISTS age_group_configs (
         group_name TEXT PRIMARY KEY,
         is_active INTEGER DEFAULT 1
       );
 
-      /* Standardvärden baserade på Scouternas programgrupper */
+      /* Uppdaterade standardval anpassade efter din kårs faktiska medlemslistor */
       INSERT OR IGNORE INTO age_group_configs (group_name, is_active) VALUES ('Familjescouting', 1);
       INSERT OR IGNORE INTO age_group_configs (group_name, is_active) VALUES ('Spårare', 1);
       INSERT OR IGNORE INTO age_group_configs (group_name, is_active) VALUES ('Upptäckare', 1);
       INSERT OR IGNORE INTO age_group_configs (group_name, is_active) VALUES ('Äventyrare', 1);
       INSERT OR IGNORE INTO age_group_configs (group_name, is_active) VALUES ('Utmanare', 1);
       INSERT OR IGNORE INTO age_group_configs (group_name, is_active) VALUES ('Rover', 1);
+      INSERT OR IGNORE INTO age_group_configs (group_name, is_active) VALUES ('Ledarna', 0);
+      INSERT OR IGNORE INTO age_group_configs (group_name, is_active) VALUES ('Ledarbarn', 0);
+      INSERT OR IGNORE INTO age_group_configs (group_name, is_active) VALUES ('Stödmedlemmar', 0);
       INSERT OR IGNORE INTO age_group_configs (group_name, is_active) VALUES ('Supporters', 0);
       INSERT OR IGNORE INTO age_group_configs (group_name, is_active) VALUES ('Passiva', 0);
     `);
 
-    // Migrate: add new columns if they don't exist yet (safe to run on existing DB)
     const existingCols = _raw.exec("PRAGMA table_info(members)");
     const colNames = existingCols[0]?.values.map(r => r[1]) || [];
     const addIfMissing = (col, def) => {
@@ -171,6 +172,7 @@ const db = {
       }
     };
     addIfMissing('scoutnet_member_id', 'INTEGER');
+    addIfMissing('scout_phone', 'TEXT');
     addIfMissing('parent_name_1', 'TEXT');
     addIfMissing('parent_phone_2', 'TEXT');
     addIfMissing('parent_name_2', 'TEXT');
