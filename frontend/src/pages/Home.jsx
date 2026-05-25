@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ScoutLogo from '../components/ScoutLogo';
 
-// Map age categories to branding themes
 function getGroupBadgeMeta(groupName) {
   const normalized = groupName.toLowerCase();
   if (normalized.includes('familj')) return { bg: 'bg-orange-100 text-orange-800 border-orange-200', icon: '⛺' };
@@ -21,7 +20,6 @@ export default function Home() {
 
   async function loadGroups() {
     try {
-      // Endpoint filters groups implicitly on active configuration mappings
       const res = await fetch('/api/members/groups');
       if (res.ok) {
         const data = await res.json();
